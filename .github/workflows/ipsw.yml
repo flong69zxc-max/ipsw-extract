@@ -1,0 +1,51 @@
+name: Extract Kernel & SPTM for iPhone 13
+
+on:
+  workflow_dispatch:
+
+jobs:
+  extract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ipsw
+        run: |
+          V=$(curl -fsSL https://api.github.com/repos/blacktop/ipsw/releases/latest | jq -r .tag_name | sed 's/^v//')
+          curl -fsSL -o /tmp/i.tgz "https://github.com/blacktop/ipsw/releases/download/v${V}/ipsw_${V}_linux_x86_64.tar.gz"
+          tar -C /usr/local/bin -xzf /tmp/i.tgz ipsw
+          ipsw version
+
+      - name: Download IPSW
+        run: |
+          mkdir -p ipsw
+          ipsw download ipsw \
+            --device iPhone14,5 \
+            --build 24A437 \
+            --output ./ipsw \
+            --confirm
+          find ./ipsw -name '*.ipsw' -ls
+
+      - name: Extract Kernel
+        run: |
+          IPSW=$(find ./ipsw -name '*.ipsw' -print -quit)
+          ipsw extract --kernel "$IPSW" --output ./extracted
+          find ./extracted -name 'kernel.raw' -ls
+
+      - name: Extract SPTM
+        run: |
+          IPSW=$(find ./ipsw -name '*.ipsw' -print -quit)
+          ipsw extract --sptm "$IPSW" --output ./extracted
+          find ./extracted -name 'sptm.raw' -ls
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-sptm-iphone13-24A437
+          path: |
+            extracted/**/kernel.raw
+            extracted/**/sptm.raw
+          retention-days: 30
+          if-no-files-found: error
