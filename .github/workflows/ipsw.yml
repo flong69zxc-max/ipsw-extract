@@ -6,10 +6,21 @@ on:
 jobs:
   extract:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
 
       - name: Install ipsw
         run: |
@@ -28,24 +39,50 @@ jobs:
             --confirm
           find ./ipsw -name '*.ipsw' -ls
 
-      - name: Extract Kernel
+      - name: Extract kernelcache
         run: |
           IPSW=$(find ./ipsw -name '*.ipsw' -print -quit)
-          ipsw extract --kernel "$IPSW" --output ./extracted
-          find ./extracted -name 'kernel.raw' -ls
+          mkdir -p kcache
+          ipsw extract --kernel "$IPSW" --output ./kcache
+          echo "=== extracted tree ==="
+          find ./kcache -type f -ls
+
+      - name: Convert kernelcache to kernel.raw
+        run: |
+          KC=$(find ./kcache -type f -name 'kernelcache*' ! -name '*.plist' ! -name '*.json' -print -quit)
+          echo "kernelcache: $KC"
+          mkdir -p kernel_out
+          ipsw kernel extract "$KC" --output ./kernel_out
+          echo "=== kernel_out tree ==="
+          find ./kernel_out -type f -ls
+          find ./kernel_out -type f -name 'kernel.raw' -ls
 
       - name: Extract SPTM
         run: |
           IPSW=$(find ./ipsw -name '*.ipsw' -print -quit)
-          ipsw extract --sptm "$IPSW" --output ./extracted
-          find ./extracted -name 'sptm.raw' -ls
+          mkdir -p sptm_out
+          ipsw extract --sptm "$IPSW" --output ./sptm_out || true
+          ipsw extract --txm "$IPSW" --output ./sptm_out || true
+          echo "=== sptm_out tree ==="
+          find ./sptm_out -type f -ls
 
-      - name: Upload artifacts
+      - name: Locate final files
+        run: |
+          echo "=== kernel ==="
+          find . -type f -name 'kernel.raw' -ls
+          echo "=== sptm ==="
+          find . -type f -iname 'sptm*' -ls
+          echo "=== all raw ==="
+          find . -type f -name '*.raw' -ls
+
+      - name: Upload kernel and sptm
         uses: actions/upload-artifact@v4
         with:
           name: kernel-sptm-iphone13-24A437
           path: |
-            extracted/**/kernel.raw
-            extracted/**/sptm.raw
+            kernel_out/**/kernel.raw
+            sptm_out/**/sptm*.raw
+            sptm_out/**/sptm*
+            kcache/**/kernelcache*
           retention-days: 30
-          if-no-files-found: error
+          if-no-files-found: warn
